@@ -5,6 +5,7 @@ RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 COPY backend/main.py /app/backend/main.py
 COPY dashboard /app/dashboard
 COPY data /app/data
-ENV PYTHONPATH=/app/backend
+COPY frontend.py /app/frontend.py
+ENV PYTHONPATH=/app
 EXPOSE 8000
-CMD ["uvicorn","backend.main:app","--host","0.0.0.0","--port","8000"]
+CMD ["uvicorn","frontend:app","--host","0.0.0.0","--port","8000"]
