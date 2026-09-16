@@ -1,10 +1,10 @@
+```python
 import os
-import json
-import sqlite3
-import urllib.request
-import urllib.error
 from datetime import datetime, date
 from typing import Optional
+
+import psycopg
+from psycopg.rows import dict_row
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,20 +14,17 @@ from fastapi.middleware.cors import CORSMiddleware
 # CONFIG
 # ============================================================
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-DATA_DIR = os.path.join(BASE_DIR, "data")
-os.makedirs(DATA_DIR, exist_ok=True)
-
-DB_PATH = os.getenv(
-    "DATABASE_PATH",
-    os.path.join(DATA_DIR, "lottery.db")
-)
-
-# สามารถกำหนด URL API ภายหลังผ่าน Render Environment Variable
-GLO_API_URL = os.getenv("GLO_API_URL", "").strip()
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 APP_NAME = "Thai Lottery Analyzer"
+APP_VERSION = "3.0.0"
+
+
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL is not configured. "
+        "Please add DATABASE_URL in Render Environment Variables."
+    )
 
 
 # ============================================================
@@ -36,7 +33,7 @@ APP_NAME = "Thai Lottery Analyzer"
 
 app = FastAPI(
     title=APP_NAME,
-    version="2.0.0",
+    version=APP_VERSION,
     description="ระบบรวบรวมและวิเคราะห์ผลสลากกินแบ่งรัฐบาล"
 )
 
@@ -50,54 +47,7 @@ app.add_middleware(
 
 
 # ============================================================
-# DATABASE
-# ============================================================
-
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def init_db():
-    conn = get_db()
-
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS draws (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-            draw_date TEXT NOT NULL UNIQUE,
-
-            weekday INTEGER NOT NULL,
-            day INTEGER NOT NULL,
-            month INTEGER NOT NULL,
-            year_be INTEGER NOT NULL,
-
-            lunar_side TEXT NOT NULL
-                CHECK(lunar_side IN ('ข้างขึ้น', 'ข้างแรม')),
-
-            first_prize TEXT NOT NULL,
-
-            last3_1 TEXT,
-            last3_2 TEXT,
-
-            last2 TEXT NOT NULL,
-
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-
-    conn.commit()
-    conn.close()
-
-
-init_db()
-
-
-# ============================================================
-# BASIC HELPERS
+# CONSTANTS
 # ============================================================
 
 WEEKDAYS = {
@@ -126,21 +76,90 @@ MONTHS = {
 }
 
 
-def normalize_number(value, digits):
-    """
-    แปลงเลขให้เป็น string ตามจำนวนหลัก
-    เช่น
-    7 -> 007
-    27 -> 027
-    """
+# ============================================================
+# DATABASE
+# ============================================================
 
+def get_db():
+    return psycopg.connect(
+        DATABASE_URL,
+        row_factory=dict_row
+    )
+
+
+def init_db():
+    with get_db() as conn:
+        with conn.cursor() as cur:
+
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS draws (
+                    id BIGSERIAL PRIMARY KEY,
+
+                    draw_date DATE NOT NULL UNIQUE,
+
+                    weekday INTEGER NOT NULL,
+                    day INTEGER NOT NULL,
+                    month INTEGER NOT NULL,
+                    year_be INTEGER NOT NULL,
+
+                    lunar_side VARCHAR(20) NOT NULL
+                        CHECK (
+                            lunar_side IN ('ข้างขึ้น', 'ข้างแรม')
+                        ),
+
+                    first_prize VARCHAR(6) NOT NULL,
+
+                    last3_1 VARCHAR(3),
+                    last3_2 VARCHAR(3),
+
+                    last2 VARCHAR(2) NOT NULL,
+
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_draws_filters
+                ON draws (
+                    weekday,
+                    day,
+                    month,
+                    year_be,
+                    lunar_side,
+                    draw_date
+                )
+                """
+            )
+
+        conn.commit()
+
+
+# ============================================================
+# STARTUP
+# ============================================================
+
+@app.on_event("startup")
+def startup():
+    init_db()
+
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+def normalize_number(value, digits):
     if value is None:
         return None
 
     value = str(value).strip()
 
-    # เอาเฉพาะตัวเลข
-    value = "".join(ch for ch in value if ch.isdigit())
+    value = "".join(
+        ch for ch in value
+        if ch.isdigit()
+    )
 
     if not value:
         return None
@@ -149,13 +168,6 @@ def normalize_number(value, digits):
 
 
 def parse_date(value):
-    """
-    รองรับวันที่:
-    YYYY-MM-DD
-    DD/MM/YYYY
-    DD-MM-YYYY
-    """
-
     if isinstance(value, date):
         return value
 
@@ -170,34 +182,24 @@ def parse_date(value):
 
     for fmt in formats:
         try:
-            return datetime.strptime(value, fmt).date()
+            return datetime.strptime(
+                value,
+                fmt
+            ).date()
         except ValueError:
-            pass
+            continue
 
     raise ValueError(
         f"รูปแบบวันที่ไม่ถูกต้อง: {value}"
     )
 
 
-def calculate_date_fields(draw_date):
-    """
-    สร้างข้อมูล:
-    weekday
-    day
-    month
-    year_be
-    """
-
+def date_fields(draw_date):
     d = parse_date(draw_date)
 
-    # Python:
-    # Monday = 0
-    # Sunday = 6
-    weekday = d.weekday() + 1
-
     return {
-        "draw_date": d.isoformat(),
-        "weekday": weekday,
+        "draw_date": d,
+        "weekday": d.weekday() + 1,
         "day": d.day,
         "month": d.month,
         "year_be": d.year + 543,
@@ -205,19 +207,6 @@ def calculate_date_fields(draw_date):
 
 
 def canonical_pair(value):
-    """
-    สำหรับเลข 2 ตัว
-
-    27 และ 72
-    จะถูกจัดเป็นกลุ่มเดียวกัน
-
-    ตัวอย่าง:
-    27 -> 27
-    72 -> 27
-    05 -> 05
-    50 -> 05
-    """
-
     value = normalize_number(value, 2)
 
     if not value:
@@ -232,19 +221,79 @@ def canonical_pair(value):
 
 @app.get("/health")
 def health():
-    conn = get_db()
 
-    row = conn.execute(
-        "SELECT COUNT(*) AS count FROM draws"
-    ).fetchone()
+    try:
 
-    conn.close()
+        with get_db() as conn:
+            with conn.cursor() as cur:
 
-    return {
-        "ok": True,
-        "draws": row["count"],
-        "version": "2.0.0"
-    }
+                cur.execute(
+                    "SELECT COUNT(*) AS count FROM draws"
+                )
+
+                row = cur.fetchone()
+
+        return {
+            "ok": True,
+            "database": "postgresql",
+            "draws": row["count"],
+            "version": APP_VERSION
+        }
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database error: {str(e)}"
+        )
+
+
+# ============================================================
+# DATABASE INFO
+# ============================================================
+
+@app.get("/api/database")
+def database_info():
+
+    try:
+
+        with get_db() as conn:
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    SELECT
+                        COUNT(*) AS total_draws,
+                        MIN(draw_date) AS oldest_draw,
+                        MAX(draw_date) AS newest_draw
+                    FROM draws
+                    """
+                )
+
+                row = cur.fetchone()
+
+        return {
+            "ok": True,
+            "database": "postgresql",
+            "total_draws": row["total_draws"],
+            "oldest_draw": (
+                row["oldest_draw"].isoformat()
+                if row["oldest_draw"]
+                else None
+            ),
+            "newest_draw": (
+                row["newest_draw"].isoformat()
+                if row["newest_draw"]
+                else None
+            ),
+        }
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database error: {str(e)}"
+        )
 
 
 # ============================================================
@@ -254,25 +303,18 @@ def health():
 @app.get("/api/options")
 def options():
 
-    conn = get_db()
+    with get_db() as conn:
+        with conn.cursor() as cur:
 
-    rows = conn.execute(
-        """
-        SELECT DISTINCT year_be
-        FROM draws
-        ORDER BY year_be DESC
-        """
-    ).fetchall()
+            cur.execute(
+                """
+                SELECT DISTINCT year_be
+                FROM draws
+                ORDER BY year_be DESC
+                """
+            )
 
-    conn.close()
-
-    years = [
-        {
-            "value": row["year_be"],
-            "label": str(row["year_be"])
-        }
-        for row in rows
-    ]
+            rows = cur.fetchall()
 
     return {
         "weekdays": [
@@ -293,7 +335,13 @@ def options():
             for key, value in MONTHS.items()
         ],
 
-        "years": years,
+        "years": [
+            {
+                "value": row["year_be"],
+                "label": str(row["year_be"])
+            }
+            for row in rows
+        ],
 
         "lunar_sides": [
             "ข้างขึ้น",
@@ -308,52 +356,53 @@ def options():
 
 @app.get("/api/analyze")
 def analyze(
-    weekday: Optional[int] = Query(default=None),
-    day: Optional[int] = Query(default=None),
-    month: Optional[int] = Query(default=None),
-    year_be: Optional[int] = Query(default=None),
-    lunar_side: Optional[str] = Query(default=None),
+    weekday: Optional[int] = Query(None),
+    day: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
+    year_be: Optional[int] = Query(None),
+    lunar_side: Optional[str] = Query(None),
 ):
 
-    filters = []
+    conditions = []
+    params = []
 
     if weekday is not None:
-        if weekday < 1 or weekday > 7:
+
+        if not 1 <= weekday <= 7:
             raise HTTPException(
                 status_code=400,
                 detail="weekday ต้องอยู่ระหว่าง 1-7"
             )
 
-        filters.append(
-            ("weekday", weekday)
-        )
+        conditions.append("weekday = %s")
+        params.append(weekday)
 
     if day is not None:
-        if day < 1 or day > 31:
+
+        if not 1 <= day <= 31:
             raise HTTPException(
                 status_code=400,
                 detail="day ต้องอยู่ระหว่าง 1-31"
             )
 
-        filters.append(
-            ("day", day)
-        )
+        conditions.append("day = %s")
+        params.append(day)
 
     if month is not None:
-        if month < 1 or month > 12:
+
+        if not 1 <= month <= 12:
             raise HTTPException(
                 status_code=400,
                 detail="month ต้องอยู่ระหว่าง 1-12"
             )
 
-        filters.append(
-            ("month", month)
-        )
+        conditions.append("month = %s")
+        params.append(month)
 
     if year_be is not None:
-        filters.append(
-            ("year_be", year_be)
-        )
+
+        conditions.append("year_be = %s")
+        params.append(year_be)
 
     if lunar_side is not None:
 
@@ -363,82 +412,77 @@ def analyze(
         ]:
             raise HTTPException(
                 status_code=400,
-                detail="lunar_side ต้องเป็น ข้างขึ้น หรือ ข้างแรม"
+                detail="lunar_side ไม่ถูกต้อง"
             )
 
-        filters.append(
-            ("lunar_side", lunar_side)
+        conditions.append(
+            "lunar_side = %s"
         )
+        params.append(lunar_side)
 
-    # ต้องเลือกอย่างน้อย 1 filter
-    if not filters:
+    if not conditions:
+
         raise HTTPException(
             status_code=400,
             detail="กรุณาเลือกตัวกรองอย่างน้อย 1 รายการ"
         )
 
-    where = []
-    params = []
+    where_sql = " AND ".join(
+        conditions
+    )
 
-    for field, value in filters:
-        where.append(f"{field} = ?")
-        params.append(value)
+    with get_db() as conn:
+        with conn.cursor() as cur:
 
-    where_sql = " AND ".join(where)
+            cur.execute(
+                f"""
+                SELECT
+                    id,
+                    draw_date,
+                    weekday,
+                    day,
+                    month,
+                    year_be,
+                    lunar_side,
+                    first_prize,
+                    last3_1,
+                    last3_2,
+                    last2
+                FROM draws
+                WHERE {where_sql}
+                ORDER BY draw_date DESC
+                """,
+                params
+            )
 
-    conn = get_db()
-
-    rows = conn.execute(
-        f"""
-        SELECT
-            id,
-            draw_date,
-            weekday,
-            day,
-            month,
-            year_be,
-            lunar_side,
-            first_prize,
-            last3_1,
-            last3_2,
-            last2
-        FROM draws
-        WHERE {where_sql}
-        ORDER BY draw_date DESC
-        """,
-        params
-    ).fetchall()
-
-    conn.close()
-
-    result_rows = []
+            rows = cur.fetchall()
 
     pair_counts = {}
     tens_counts = {}
     units_counts = {}
 
+    result_rows = []
+
     for row in rows:
 
         item = dict(row)
 
-        result_rows.append(item)
+        if item["draw_date"]:
+            item["draw_date"] = (
+                item["draw_date"].isoformat()
+            )
 
-        # -----------------------------
-        # 2 DIGIT PAIR
-        # -----------------------------
+        result_rows.append(item)
 
         pair = canonical_pair(
             row["last2"]
         )
 
         if pair:
+
             pair_counts[pair] = (
                 pair_counts.get(pair, 0) + 1
             )
-
-        # -----------------------------
-        # TENS
-        # -----------------------------
 
         last2 = normalize_number(
             row["last2"],
@@ -461,10 +505,10 @@ def analyze(
     pair_stats = sorted(
         [
             {
-                "pair": key,
-                "count": value
+                "pair": k,
+                "count": v
             }
-            for key, value in pair_counts.items()
+            for k, v in pair_counts.items()
         ],
         key=lambda x: (
             -x["count"],
@@ -475,10 +519,10 @@ def analyze(
     tens_stats = sorted(
         [
             {
-                "digit": key,
-                "count": value
+                "digit": k,
+                "count": v
             }
-            for key, value in tens_counts.items()
+            for k, v in tens_counts.items()
         ],
         key=lambda x: (
             -x["count"],
@@ -489,10 +533,10 @@ def analyze(
     units_stats = sorted(
         [
             {
-                "digit": key,
-                "count": value
+                "digit": k,
+                "count": v
             }
-            for key, value in units_counts.items()
+            for k, v in units_counts.items()
         ],
         key=lambda x: (
             -x["count"],
@@ -508,23 +552,23 @@ def analyze(
             "day": day,
             "month": month,
             "year_be": year_be,
-            "lunar_side": lunar_side,
+            "lunar_side": lunar_side
         },
 
         "count": len(result_rows),
 
         "rows": result_rows,
 
-        "stats": {
-            "pair": pair_stats,
+        "statistics": {
+            "pairs": pair_stats,
             "tens": tens_stats,
-            "units": units_stats,
+            "units": units_stats
         }
     }
 
 
 # ============================================================
-# IMPORT NORMALIZED DATA
+# IMPORT DATA
 # ============================================================
 
 @app.post("/api/import")
@@ -533,6 +577,7 @@ def import_data(payload: dict):
     draws = payload.get("draws")
 
     if not isinstance(draws, list):
+
         raise HTTPException(
             status_code=400,
             detail="payload ต้องมี draws เป็น array"
@@ -542,144 +587,137 @@ def import_data(payload: dict):
     updated = 0
     skipped = 0
 
-    conn = get_db()
+    with get_db() as conn:
+        with conn.cursor() as cur:
 
-    for item in draws:
+            for item in draws:
 
-        try:
+                try:
 
-            draw_date = item.get("draw_date")
-
-            if not draw_date:
-                skipped += 1
-                continue
-
-            date_fields = calculate_date_fields(
-                draw_date
-            )
-
-            first_prize = normalize_number(
-                item.get("first_prize"),
-                6
-            )
-
-            last3_1 = normalize_number(
-                item.get("last3_1"),
-                3
-            )
-
-            last3_2 = normalize_number(
-                item.get("last3_2"),
-                3
-            )
-
-            last2 = normalize_number(
-                item.get("last2"),
-                2
-            )
-
-            lunar_side = item.get(
-                "lunar_side"
-            )
-
-            if lunar_side not in [
-                "ข้างขึ้น",
-                "ข้างแรม"
-            ]:
-                skipped += 1
-                continue
-
-            if not first_prize or not last2:
-                skipped += 1
-                continue
-
-            now = datetime.utcnow().isoformat()
-
-            existing = conn.execute(
-                """
-                SELECT id
-                FROM draws
-                WHERE draw_date = ?
-                """,
-                (
-                    date_fields["draw_date"],
-                )
-            ).fetchone()
-
-            if existing:
-
-                conn.execute(
-                    """
-                    UPDATE draws
-                    SET
-                        weekday = ?,
-                        day = ?,
-                        month = ?,
-                        year_be = ?,
-                        lunar_side = ?,
-                        first_prize = ?,
-                        last3_1 = ?,
-                        last3_2 = ?,
-                        last2 = ?
-                    WHERE draw_date = ?
-                    """,
-                    (
-                        date_fields["weekday"],
-                        date_fields["day"],
-                        date_fields["month"],
-                        date_fields["year_be"],
-                        lunar_side,
-                        first_prize,
-                        last3_1,
-                        last3_2,
-                        last2,
-                        date_fields["draw_date"],
+                    fields = date_fields(
+                        item["draw_date"]
                     )
-                )
 
-                updated += 1
-
-            else:
-
-                conn.execute(
-                    """
-                    INSERT INTO draws (
-                        draw_date,
-                        weekday,
-                        day,
-                        month,
-                        year_be,
-                        lunar_side,
-                        first_prize,
-                        last3_1,
-                        last3_2,
-                        last2,
-                        created_at
+                    first_prize = normalize_number(
+                        item.get("first_prize"),
+                        6
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        date_fields["draw_date"],
-                        date_fields["weekday"],
-                        date_fields["day"],
-                        date_fields["month"],
-                        date_fields["year_be"],
-                        lunar_side,
-                        first_prize,
-                        last3_1,
-                        last3_2,
-                        last2,
-                        now,
+
+                    last3_1 = normalize_number(
+                        item.get("last3_1"),
+                        3
                     )
-                )
 
-                inserted += 1
+                    last3_2 = normalize_number(
+                        item.get("last3_2"),
+                        3
+                    )
 
-        except Exception:
-            skipped += 1
+                    last2 = normalize_number(
+                        item.get("last2"),
+                        2
+                    )
 
-    conn.commit()
-    conn.close()
+                    lunar_side = item.get(
+                        "lunar_side"
+                    )
+
+                    if lunar_side not in [
+                        "ข้างขึ้น",
+                        "ข้างแรม"
+                    ]:
+                        skipped += 1
+                        continue
+
+                    if not first_prize or not last2:
+                        skipped += 1
+                        continue
+
+                    cur.execute(
+                        """
+                        SELECT id
+                        FROM draws
+                        WHERE draw_date = %s
+                        """,
+                        (fields["draw_date"],)
+                    )
+
+                    existing = cur.fetchone()
+
+                    if existing:
+
+                        cur.execute(
+                            """
+                            UPDATE draws
+                            SET
+                                weekday = %s,
+                                day = %s,
+                                month = %s,
+                                year_be = %s,
+                                lunar_side = %s,
+                                first_prize = %s,
+                                last3_1 = %s,
+                                last3_2 = %s,
+                                last2 = %s
+                            WHERE draw_date = %s
+                            """,
+                            (
+                                fields["weekday"],
+                                fields["day"],
+                                fields["month"],
+                                fields["year_be"],
+                                lunar_side,
+                                first_prize,
+                                last3_1,
+                                last3_2,
+                                last2,
+                                fields["draw_date"],
+                            )
+                        )
+
+                        updated += 1
+
+                    else:
+
+                        cur.execute(
+                            """
+                            INSERT INTO draws (
+                                draw_date,
+                                weekday,
+                                day,
+                                month,
+                                year_be,
+                                lunar_side,
+                                first_prize,
+                                last3_1,
+                                last3_2,
+                                last2
+                            )
+                            VALUES (
+                                %s,%s,%s,%s,%s,
+                                %s,%s,%s,%s,%s
+                            )
+                            """,
+                            (
+                                fields["draw_date"],
+                                fields["weekday"],
+                                fields["day"],
+                                fields["month"],
+                                fields["year_be"],
+                                lunar_side,
+                                first_prize,
+                                last3_1,
+                                last3_2,
+                                last2,
+                            )
+                        )
+
+                        inserted += 1
+
+                except Exception:
+                    skipped += 1
+
+        conn.commit()
 
     return {
         "ok": True,
@@ -691,137 +729,26 @@ def import_data(payload: dict):
 
 
 # ============================================================
-# GLO API HELPER
+# DELETE ALL DATA
 # ============================================================
 
-def fetch_json(url):
-    """
-    เรียก API แบบ server-side
+@app.delete("/api/draws")
+def delete_all_draws():
 
-    ใช้ urllib ของ Python
-    จึงไม่ต้องติดตั้ง requests/httpx
-    """
+    with get_db() as conn:
+        with conn.cursor() as cur:
 
-    request = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent":
-                "ThaiLotteryAnalyzer/2.0"
-        }
-    )
-
-    try:
-
-        with urllib.request.urlopen(
-            request,
-            timeout=30
-        ) as response:
-
-            raw = response.read()
-
-            return json.loads(
-                raw.decode("utf-8")
+            cur.execute(
+                "DELETE FROM draws"
             )
 
-    except urllib.error.HTTPError as e:
+            deleted = cur.rowcount
 
-        raise HTTPException(
-            status_code=502,
-            detail=f"GLO API HTTP Error: {e.code}"
-        )
-
-    except urllib.error.URLError as e:
-
-        raise HTTPException(
-            status_code=502,
-            detail=f"GLO API connection error: {e.reason}"
-        )
-
-    except json.JSONDecodeError:
-
-        raise HTTPException(
-            status_code=502,
-            detail="GLO API ส่งข้อมูลที่ไม่ใช่ JSON"
-        )
-
-
-# ============================================================
-# IMPORT FROM GLO
-# ============================================================
-
-@app.post("/api/import/glo")
-def import_from_glo(
-    api_url: Optional[str] = Query(default=None)
-):
-
-    """
-    จุดเชื่อมต่อข้อมูล GLO
-
-    ลำดับความสำคัญ:
-    1. api_url ที่ส่งเข้ามา
-    2. GLO_API_URL ใน Environment Variable
-
-    ยังไม่เดา endpoint ของ GLO
-    ถ้ายังไม่มี URL ที่ยืนยัน ระบบจะตอบกลับให้กำหนด URL ก่อน
-    """
-
-    target_url = (
-        api_url.strip()
-        if api_url
-        else GLO_API_URL
-    )
-
-    if not target_url:
-
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "message":
-                    "ยังไม่ได้กำหนด GLO API URL",
-                "next_step":
-                    "ตั้งค่า GLO_API_URL ใน Render Environment Variables"
-            }
-        )
-
-    data = fetch_json(target_url)
+        conn.commit()
 
     return {
         "ok": True,
-        "source": "GLO",
-        "message":
-            "เชื่อมต่อแหล่งข้อมูลสำเร็จ แต่ต้องตรวจรูปแบบข้อมูลก่อนนำเข้า",
-        "data": data
-    }
-
-
-# ============================================================
-# DATABASE SUMMARY
-# ============================================================
-
-@app.get("/api/database")
-def database_summary():
-
-    conn = get_db()
-
-    total = conn.execute(
-        "SELECT COUNT(*) AS count FROM draws"
-    ).fetchone()["count"]
-
-    oldest = conn.execute(
-        "SELECT MIN(draw_date) AS value FROM draws"
-    ).fetchone()["value"]
-
-    newest = conn.execute(
-        "SELECT MAX(draw_date) AS value FROM draws"
-    ).fetchone()["value"]
-
-    conn.close()
-
-    return {
-        "ok": True,
-        "total_draws": total,
-        "oldest_draw": oldest,
-        "newest_draw": newest,
+        "deleted": deleted
     }
 
 
@@ -834,16 +761,18 @@ def root():
 
     return {
         "name": APP_NAME,
-        "version": "2.0.0",
+        "version": APP_VERSION,
         "status": "running",
+        "database": "postgresql",
 
         "endpoints": {
             "health": "/health",
+            "database": "/api/database",
             "options": "/api/options",
             "analyze": "/api/analyze",
-            "database": "/api/database",
             "import": "/api/import",
-            "glo_import": "/api/import/glo",
-            "docs": "/docs",
+            "delete": "/api/draws",
+            "docs": "/docs"
         }
     }
+```
