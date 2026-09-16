@@ -1,115 +1,961 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="th">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title>Thai Lottery Analyzer</title>
+
 <style>
-:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f6f8;color:#17202a}
-*{box-sizing:border-box} body{margin:0}.wrap{max-width:1200px;margin:auto;padding:24px}
-.card{background:white;border:1px solid #e5e7eb;border-radius:18px;padding:20px;box-shadow:0 5px 20px #0000000a;margin-bottom:18px}
-h1{margin:0 0 8px;font-size:28px}.muted{color:#667085}
-.filters{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:18px}
-label{font-weight:700;font-size:14px}select{width:100%;margin-top:7px;padding:11px;border:1px solid #d0d5dd;border-radius:10px;background:white;font-size:15px}
-.actions{margin-top:16px;display:flex;gap:10px}.btn{border:0;border-radius:11px;padding:12px 20px;font-weight:800;cursor:pointer}.primary{background:#111827;color:#fff}.secondary{background:#eef2f6;color:#111827}
-.status{margin-top:12px;padding:12px;border-radius:10px;background:#f8fafc;display:none}.error{background:#fff1f2;color:#9f1239}
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.stat{padding:16px;background:#f8fafc;border-radius:12px}.stat strong{display:block;font-size:25px;margin-top:4px}
-.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:850px}th,td{padding:10px;border-bottom:1px solid #eee;text-align:left;white-space:nowrap}th{background:#f8fafc}
-.badge{display:inline-block;padding:4px 8px;border-radius:999px;background:#eef2ff}.bar{height:8px;background:#e5e7eb;border-radius:9px;overflow:hidden}.bar i{display:block;height:100%;background:#111827}
-@media(max-width:800px){.filters{grid-template-columns:1fr 1fr}.stats{grid-template-columns:1fr}.wrap{padding:14px}}
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Tahoma, sans-serif;
+    background: #f4f6f8;
+    color: #1f2937;
+}
+
+header {
+    background: #111827;
+    color: white;
+    padding: 22px;
+}
+
+header h1 {
+    margin: 0 0 6px;
+}
+
+header p {
+    margin: 0;
+    opacity: .8;
+}
+
+.container {
+    max-width: 1400px;
+    margin: auto;
+    padding: 20px;
+}
+
+.card {
+    background: white;
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.06);
+}
+
+.filters {
+    display: grid;
+    grid-template-columns:
+        repeat(auto-fit, minmax(170px, 1fr));
+    gap: 14px;
+}
+
+label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 6px;
+}
+
+select,
+input,
+button {
+    width: 100%;
+    padding: 11px;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+    font-size: 15px;
+}
+
+button {
+    cursor: pointer;
+    border: 0;
+    background: #111827;
+    color: white;
+    font-weight: bold;
+}
+
+button:hover {
+    opacity: .9;
+}
+
+button.secondary {
+    background: #6b7280;
+}
+
+button.success {
+    background: #047857;
+}
+
+button.warning {
+    background: #b45309;
+}
+
+.actions {
+    display: grid;
+    grid-template-columns:
+        repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.stats {
+    display: grid;
+    grid-template-columns:
+        repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+.stat {
+    padding: 16px;
+    background: #f9fafb;
+    border-radius: 10px;
+}
+
+.stat strong {
+    display: block;
+    font-size: 28px;
+    margin-top: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+}
+
+th,
+td {
+    padding: 9px;
+    border-bottom: 1px solid #e5e7eb;
+    text-align: center;
+}
+
+th {
+    background: #f3f4f6;
+}
+
+.status {
+    padding: 12px;
+    border-radius: 8px;
+    background: #eff6ff;
+    margin-bottom: 15px;
+}
+
+.error {
+    background: #fef2f2;
+    color: #991b1b;
+}
+
+.success-msg {
+    background: #ecfdf5;
+    color: #065f46;
+}
+
+.hidden {
+    display: none;
+}
+
+@media(max-width:700px) {
+
+    .container {
+        padding: 10px;
+    }
+
+    table {
+        font-size: 12px;
+    }
+}
 </style>
 </head>
+
 <body>
-<div class="wrap">
-  <div class="card">
-    <h1>วิเคราะห์ผลสลากย้อนหลัง</h1>
-    <div class="muted">เลือกตัวกรองให้เรียบร้อย แล้วกด “วิเคราะห์” เพื่อค้นหาและคำนวณผล</div>
-    <div class="filters">
-      <div><label>วัน<select id="weekday"><option value="">ไม่เลือก</option></select></label></div>
-      <div><label>วันที่<select id="day"><option value="">ไม่เลือก</option></select></label></div>
-      <div><label>เดือน<select id="month"><option value="">ไม่เลือก</option></select></label></div>
-      <div><label>ปี<select id="year"><option value="">ไม่เลือก</option></select></label></div>
-      <div><label>จันทรคติ<select id="lunar"><option value="">ไม่เลือก</option><option value="ข้างขึ้น">ข้างขึ้น</option><option value="ข้างแรม">ข้างแรม</option></select></label></div>
-    </div>
-    <div class="actions">
-      <button class="btn primary" id="analyze">🔍 วิเคราะห์</button>
-      <button class="btn secondary" id="reset">ล้างตัวกรอง</button>
-    </div>
-    <div id="status" class="status"></div>
-  </div>
 
-  <div id="results" style="display:none">
-    <div class="card">
-      <h2>สรุปผล</h2>
-      <div class="stats">
-        <div class="stat">จำนวนงวดที่ตรงเงื่อนไข<strong id="count">0</strong></div>
-        <div class="stat">คู่เลขท้าย 2 ตัวที่พบ<strong id="pairs">0</strong></div>
-        <div class="stat">ช่วงข้อมูล<strong id="range">-</strong></div>
-      </div>
+<header>
+    <h1>Thai Lottery Analyzer</h1>
+    <p>
+        ระบบรวบรวมและวิเคราะห์ผลสลากย้อนหลัง
+    </p>
+</header>
+
+<div class="container">
+
+    <div id="status" class="status">
+        กำลังเชื่อมต่อระบบ...
     </div>
 
     <div class="card">
-      <h2>ความถี่เลขท้าย 2 ตัว</h2>
-      <div id="pairStats"></div>
+
+        <h2>ตัวกรองงวด</h2>
+
+        <div class="filters">
+
+            <div>
+                <label>วัน</label>
+                <select id="weekday">
+                    <option value="">ไม่เลือก</option>
+                </select>
+            </div>
+
+            <div>
+                <label>วันที่</label>
+                <select id="day">
+                    <option value="">ไม่เลือก</option>
+                </select>
+            </div>
+
+            <div>
+                <label>เดือน</label>
+                <select id="month">
+                    <option value="">ไม่เลือก</option>
+                </select>
+            </div>
+
+            <div>
+                <label>ปี</label>
+                <select id="year">
+                    <option value="">ไม่เลือก</option>
+                </select>
+            </div>
+
+            <div>
+                <label>ข้างขึ้น / ข้างแรม</label>
+                <select id="lunar">
+                    <option value="">ไม่เลือก</option>
+                </select>
+            </div>
+
+        </div>
+
+        <div class="actions">
+
+            <button
+                class="success"
+                onclick="analyze()"
+            >
+                🔍 วิเคราะห์
+            </button>
+
+            <button
+                class="secondary"
+                onclick="resetFilters()"
+            >
+                ↺ ล้างตัวกรอง
+            </button>
+
+        </div>
+
     </div>
 
+
     <div class="card">
-      <h2>ผลรางวัลย้อนหลัง</h2>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>วันที่</th><th>วัน</th><th>จันทรคติ</th><th>รางวัลที่ 1</th><th>เลขท้าย 3 ตัว</th><th>เลขท้าย 2 ตัว</th></tr></thead>
-          <tbody id="tbody"></tbody>
-        </table>
-      </div>
+
+        <h2>ภาพรวมข้อมูล</h2>
+
+        <div class="stats">
+
+            <div class="stat">
+                จำนวนงวด
+                <strong id="total">0</strong>
+            </div>
+
+            <div class="stat">
+                งวดแรก
+                <strong id="oldest">-</strong>
+            </div>
+
+            <div class="stat">
+                งวดล่าสุด
+                <strong id="newest">-</strong>
+            </div>
+
+            <div class="stat">
+                จำนวนที่ตรงตัวกรอง
+                <strong id="matched">0</strong>
+            </div>
+
+        </div>
+
     </div>
-  </div>
+
+
+    <div class="card">
+
+        <h2>สถิติเลขท้าย 2 ตัว</h2>
+
+        <h3>เลขตรง</h3>
+        <div id="exact"></div>
+
+        <h3>นับแบบสลับหลัก</h3>
+        <div id="pairs"></div>
+
+        <h3>หลักสิบ</h3>
+        <div id="tens"></div>
+
+        <h3>หลักหน่วย</h3>
+        <div id="units"></div>
+
+    </div>
+
+
+    <div class="card">
+
+        <h2>ผลลัพธ์งวดที่ตรงเงื่อนไข</h2>
+
+        <div style="overflow:auto">
+
+            <table>
+
+                <thead>
+
+                    <tr>
+                        <th>วันที่</th>
+                        <th>วัน</th>
+                        <th>ข้าง</th>
+                        <th>รางวัลที่ 1</th>
+                        <th>ท้าย 3 ตัว</th>
+                        <th>ท้าย 2 ตัว</th>
+                    </tr>
+
+                </thead>
+
+                <tbody id="rows"></tbody>
+
+            </table>
+
+        </div>
+
+    </div>
+
+
+    <div class="card">
+
+        <h2>นำเข้าข้อมูลจาก GLO</h2>
+
+        <p>
+            Endpoint สำหรับรับข้อมูลผลรางวัล
+            จากแหล่งข้อมูลของสำนักงานสลากกินแบ่งรัฐบาล
+        </p>
+
+        <p>
+            ใช้ Swagger สำหรับการนำเข้าชุดข้อมูลจริง
+            หลังจากเตรียมข้อมูลแล้ว
+        </p>
+
+        <button
+            class="warning"
+            onclick="openDocs()"
+        >
+            เปิด API / Import
+        </button>
+
+    </div>
+
+
+    <div class="card">
+
+        <h2>ทดสอบย้อนหลัง</h2>
+
+        <p>
+            ระบบนี้ใช้เพื่อศึกษารูปแบบของข้อมูลย้อนหลัง
+            ไม่ใช่การรับประกันผลรางวัลในอนาคต
+        </p>
+
+        <div class="filters">
+
+            <div>
+                <label>จำนวนงวดย้อนหลัง</label>
+
+                <input
+                    id="window"
+                    type="number"
+                    min="2"
+                    max="200"
+                    value="12"
+                >
+            </div>
+
+            <div>
+                <label>สลับหลัก</label>
+
+                <select id="swap">
+                    <option value="true">
+                        ใช้
+                    </option>
+
+                    <option value="false">
+                        ไม่ใช้
+                    </option>
+                </select>
+            </div>
+
+        </div>
+
+        <div class="actions">
+
+            <button
+                class="warning"
+                onclick="backtest()"
+            >
+                🧪 ทดสอบย้อนหลัง
+            </button>
+
+        </div>
+
+        <div id="backtestResult"></div>
+
+    </div>
+
 </div>
-<script>
-const api = "";
-const $ = id => document.getElementById(id);
-const months = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
-const weekdays = ["","จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์","อาทิตย์"];
 
-async function loadOptions(){
-  const r = await fetch(api+"/api/options"); const d = await r.json();
-  d.weekdays.forEach(x => $("weekday").insertAdjacentHTML("beforeend",`<option value="${x.value}">${x.label}</option>`));
-  d.days.forEach(x => $("day").insertAdjacentHTML("beforeend",`<option value="${x}">${x}</option>`));
-  d.months.forEach(x => $("month").insertAdjacentHTML("beforeend",`<option value="${x.value}">${x.label}</option>`));
-  d.years.forEach(x => $("year").insertAdjacentHTML("beforeend",`<option value="${x}">${x}</option>`));
+
+<script>
+
+const API = "";
+
+async function api(path, options = {}) {
+
+    const response = await fetch(
+        API + path,
+        options
+    );
+
+    const text =
+        await response.text();
+
+    let data;
+
+    try {
+        data = JSON.parse(text);
+    } catch {
+        throw new Error(
+            "API ไม่ได้ส่ง JSON กลับมา"
+        );
+    }
+
+    if (!response.ok) {
+
+        throw new Error(
+            data.detail ||
+            "API Error"
+        );
+    }
+
+    return data;
 }
-function showStatus(msg, error=false){$("status").textContent=msg;$("status").className="status"+(error?" error":"");$("status").style.display="block"}
-function params(){
-  const p=new URLSearchParams();
-  const map={weekday:"weekday",day:"day",month:"month",year:"year_be",lunar:"lunar_side"};
-  for(const [id,key] of Object.entries(map)){const v=$(id).value;if(v)p.set(key,v)}
-  return p;
+
+
+function addOption(
+    select,
+    value,
+    label
+) {
+
+    const option =
+        document.createElement(
+            "option"
+        );
+
+    option.value = value;
+    option.textContent = label;
+
+    select.appendChild(
+        option
+    );
 }
-$("analyze").onclick=async()=>{
-  const p=params();
-  if(!p.toString()){showStatus("กรุณาเลือกตัวกรองอย่างน้อย 1 รายการ",true);$("results").style.display="none";return}
-  showStatus("กำลังค้นหาและวิเคราะห์ข้อมูล...");
-  const r=await fetch(api+"/api/analyze?"+p.toString()); const d=await r.json();
-  if(!d.ok){showStatus(d.error,true);$("results").style.display="none";return}
-  showStatus(`วิเคราะห์เสร็จแล้ว พบ ${d.count} งวด`);
-  $("results").style.display="block";
-  $("count").textContent=d.count;
-  $("pairs").textContent=d.statistics.last2_pairs.length;
-  $("range").textContent=d.count ? `${d.rows[d.rows.length-1].draw_date} → ${d.rows[0].draw_date}` : "-";
-  $("tbody").innerHTML=d.rows.map(x=>`<tr>
-    <td>${x.draw_date}</td><td>${weekdays[x.weekday]}</td>
-    <td><span class="badge">${x.lunar_side}</span></td>
-    <td><b>${x.first_prize}</b></td>
-    <td>${x.last3_1||"-"}${x.last3_2?" / "+x.last3_2:""}</td>
-    <td><b>${String(x.last2).padStart(2,"0")}</b></td>
-  </tr>`).join("");
-  const max=Math.max(1,...d.statistics.last2_pairs.map(x=>x.count));
-  $("pairStats").innerHTML=d.statistics.last2_pairs.length ? d.statistics.last2_pairs.map(x=>{
-    const label=x.pair[0]===x.pair[1]?x.pair:x.pair+" / "+x.pair.split("").reverse().join("");
-    return `<div style="margin:10px 0"><div style="display:flex;justify-content:space-between"><span>${label}</span><b>${x.count}</b></div><div class="bar"><i style="width:${x.count/max*100}%"></i></div></div>`;
-  }).join("") : "<div class='muted'>ไม่พบข้อมูล</div>";
-};
-$("reset").onclick=()=>{["weekday","day","month","year","lunar"].forEach(id=>$(id).value="");$("results").style.display="none";$("status").style.display="none"};
-loadOptions();
+
+
+async function loadOptions() {
+
+    const data =
+        await api(
+            "/api/options"
+        );
+
+    const weekday =
+        document.getElementById(
+            "weekday"
+        );
+
+    const day =
+        document.getElementById(
+            "day"
+        );
+
+    const month =
+        document.getElementById(
+            "month"
+        );
+
+    const year =
+        document.getElementById(
+            "year"
+        );
+
+    const lunar =
+        document.getElementById(
+            "lunar"
+        );
+
+
+    data.weekdays.forEach(
+        x => addOption(
+            weekday,
+            x.value,
+            x.label
+        )
+    );
+
+
+    data.days.forEach(
+        x => addOption(
+            day,
+            x,
+            x
+        )
+    );
+
+
+    data.months.forEach(
+        x => addOption(
+            month,
+            x.value,
+            x.label
+        )
+    );
+
+
+    data.years.forEach(
+        x => addOption(
+            year,
+            x.value,
+            x.label
+        )
+    );
+
+
+    data.lunar_sides.forEach(
+        x => addOption(
+            lunar,
+            x,
+            x
+        )
+    );
+}
+
+
+async function loadDatabase() {
+
+    const data =
+        await api(
+            "/api/database"
+        );
+
+    document.getElementById(
+        "total"
+    ).textContent =
+        data.total_draws;
+
+    document.getElementById(
+        "oldest"
+    ).textContent =
+        data.oldest_draw || "-";
+
+    document.getElementById(
+        "newest"
+    ).textContent =
+        data.newest_draw || "-";
+
+    setStatus(
+        "เชื่อมต่อ PostgreSQL สำเร็จ",
+        true
+    );
+}
+
+
+function setStatus(
+    message,
+    success = false
+) {
+
+    const box =
+        document.getElementById(
+            "status"
+        );
+
+    box.textContent = message;
+
+    box.className =
+        success
+        ? "status success-msg"
+        : "status";
+}
+
+
+function resetFilters() {
+
+    [
+        "weekday",
+        "day",
+        "month",
+        "year",
+        "lunar"
+    ].forEach(
+        id => {
+            document.getElementById(
+                id
+            ).value = "";
+        }
+    );
+
+    document.getElementById(
+        "matched"
+    ).textContent = "0";
+
+    document.getElementById(
+        "rows"
+    ).innerHTML = "";
+
+    clearStatistics();
+}
+
+
+function clearStatistics() {
+
+    [
+        "exact",
+        "pairs",
+        "tens",
+        "units"
+    ].forEach(
+        id => {
+            document.getElementById(
+                id
+            ).innerHTML = "";
+        }
+    );
+}
+
+
+function queryString() {
+
+    const params =
+        new URLSearchParams();
+
+    const map = {
+        weekday: "weekday",
+        day: "day",
+        month: "month",
+        year: "year_be",
+        lunar: "lunar_side"
+    };
+
+    Object.entries(map)
+        .forEach(
+            ([element, key]) => {
+
+                const value =
+                    document.getElementById(
+                        element
+                    ).value;
+
+                if (value !== "") {
+
+                    params.set(
+                        key,
+                        value
+                    );
+                }
+            }
+        );
+
+    return params.toString();
+}
+
+
+function renderStats(
+    id,
+    data,
+    key
+) {
+
+    const container =
+        document.getElementById(
+            id
+        );
+
+    if (!data || data.length === 0) {
+
+        container.innerHTML =
+            "<p>ไม่มีข้อมูล</p>";
+
+        return;
+    }
+
+    let html =
+        "<table><thead>" +
+        "<tr><th>เลข</th>" +
+        "<th>จำนวน</th></tr>" +
+        "</thead><tbody>";
+
+    data.slice(
+        0,
+        30
+    ).forEach(
+        row => {
+
+            html +=
+                "<tr>" +
+                "<td>" +
+                row[key] +
+                "</td>" +
+                "<td>" +
+                row.count +
+                "</td>" +
+                "</tr>";
+        }
+    );
+
+    html +=
+        "</tbody></table>";
+
+    container.innerHTML =
+        html;
+}
+
+
+function renderRows(rows) {
+
+    const tbody =
+        document.getElementById(
+            "rows"
+        );
+
+    tbody.innerHTML = "";
+
+    rows.forEach(
+        row => {
+
+            const tr =
+                document.createElement(
+                    "tr"
+                );
+
+            tr.innerHTML =
+                "<td>" +
+                row.draw_date +
+                "</td>" +
+
+                "<td>" +
+                (
+                    row.weekday
+                    ? [
+                        "",
+                        "จันทร์",
+                        "อังคาร",
+                        "พุธ",
+                        "พฤหัสบดี",
+                        "ศุกร์",
+                        "เสาร์",
+                        "อาทิตย์"
+                    ][row.weekday]
+                    : "-"
+                ) +
+                "</td>" +
+
+                "<td>" +
+                row.lunar_side +
+                "</td>" +
+
+                "<td>" +
+                row.first_prize +
+                "</td>" +
+
+                "<td>" +
+                (
+                    [
+                        row.last3_1,
+                        row.last3_2
+                    ]
+                    .filter(Boolean)
+                    .join(" / ")
+                ) +
+                "</td>" +
+
+                "<td>" +
+                row.last2 +
+                "</td>";
+
+            tbody.appendChild(
+                tr
+            );
+        }
+    );
+}
+
+
+async function analyze() {
+
+    try {
+
+        setStatus(
+            "กำลังวิเคราะห์..."
+        );
+
+        const query =
+            queryString();
+
+        const data =
+            await api(
+                "/api/analyze" +
+                (
+                    query
+                    ? "?" + query
+                    : ""
+                )
+            );
+
+        document.getElementById(
+            "matched"
+        ).textContent =
+            data.count;
+
+        renderRows(
+            data.rows
+        );
+
+        renderStats(
+            "exact",
+            data.statistics.exact_last2,
+            "number"
+        );
+
+        renderStats(
+            "pairs",
+            data.statistics.swapped_pair,
+            "pair"
+        );
+
+        renderStats(
+            "tens",
+            data.statistics.tens,
+            "digit"
+        );
+
+        renderStats(
+            "units",
+            data.statistics.units,
+            "digit"
+        );
+
+        setStatus(
+            "วิเคราะห์เสร็จแล้ว",
+            true
+        );
+
+    } catch (error) {
+
+        setStatus(
+            error.message
+        );
+    }
+}
+
+
+async function backtest() {
+
+    try {
+
+        const window =
+            document.getElementById(
+                "window"
+            ).value;
+
+        const swap =
+            document.getElementById(
+                "swap"
+            ).value;
+
+        const data =
+            await api(
+                "/api/backtest?" +
+                new URLSearchParams({
+                    window,
+                    use_swap: swap
+                })
+            );
+
+        const box =
+            document.getElementById(
+                "backtestResult"
+            );
+
+        box.innerHTML =
+            "<div class='status'>" +
+
+            "จำนวนการทดสอบ: " +
+            data.tests +
+
+            "<br>" +
+
+            "จำนวนครั้งที่ตรงตามเกณฑ์: " +
+            data.hits +
+
+            "<br>" +
+
+            "อัตราที่ตรงตามเกณฑ์ย้อนหลัง: " +
+            (
+                data.hit_rate * 100
+            ).toFixed(2) +
+
+            "%" +
+
+            "</div>";
+
+    } catch (error) {
+
+        document.getElementById(
+            "backtestResult"
+        ).innerHTML =
+            "<div class='status error'>" +
+            error.message +
+            "</div>";
+    }
+}
+
+
+function openDocs() {
+
+    window.open(
+        "/docs",
+        "_blank"
+    );
+}
+
+
+async function start() {
+
+    try {
+
+        await loadOptions();
+
+        await loadDatabase();
+
+    } catch (error) {
+
+        setStatus(
+            error.message
+        );
+    }
+}
+
+
+start();
+
 </script>
+
 </body>
 </html>
