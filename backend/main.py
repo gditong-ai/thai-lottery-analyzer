@@ -1,4 +1,3 @@
-```python
 import os
 from datetime import datetime, date
 from typing import Optional
@@ -775,4 +774,3 @@ def root():
             "docs": "/docs"
         }
     }
-```
