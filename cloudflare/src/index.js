@@ -10,7 +10,19 @@ function approximateLunarSide(date){const t=Date.parse(date+'T12:00:00Z');const 
 async function importDraws(db,items){let inserted=0,updated=0,skipped=0,errors=[];for(let i=0;i<items.length;i++){try{const item=items[i],f=dateFields(item.draw_date),first=digits(item.first_prize,6),last2=digits(item.last2,2),lunar=item.lunar_side||approximateLunarSide(f.draw_date);if(!first||!last2)throw Error('ไม่มีข้อมูลรางวัล');if(!['ข้างขึ้น','ข้างแรม'].includes(lunar))throw Error('ต้องระบุข้างขึ้น/ข้างแรมที่ถูกต้อง');let found=await db.prepare('SELECT id FROM draws WHERE draw_date=?').bind(f.draw_date).first();await db.prepare(`INSERT INTO draws(draw_date,weekday,day,month,year_be,lunar_side,first_prize,last3_1,last3_2,last2,source) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(draw_date) DO UPDATE SET weekday=excluded.weekday,day=excluded.day,month=excluded.month,year_be=excluded.year_be,lunar_side=excluded.lunar_side,first_prize=excluded.first_prize,last3_1=excluded.last3_1,last3_2=excluded.last3_2,last2=excluded.last2,source=excluded.source,updated_at=CURRENT_TIMESTAMP`).bind(f.draw_date,f.weekday,f.day,f.month,f.year_be,lunar,first,digits(item.last3_1,3),digits(item.last3_2,3),last2,item.source||'GLO').run();found?updated++:inserted++;}catch(e){skipped++;if(errors.length<50)errors.push({index:i,error:e.message});}}return {inserted,updated,skipped,total:inserted+updated,errors};}
 const GLO='https://www.glo.or.th';
 async function gloFetch(path,body={}){const r=await fetch(GLO+path,{method:'POST',headers:{'content-type':'application/json',origin:GLO,referer:GLO+'/mission/awarding/orderby-time'},body:JSON.stringify(body)});if(!r.ok)throw Error('GLO HTTP '+r.status);return r.json();}
-function gloItems(payload){if(payload.status===false)throw Error(payload.statusMessage||'GLO API ไม่สำเร็จ');let arr=payload.response??payload.data??[];if(!Array.isArray(arr))arr=[arr];return arr.filter(e=>e?.date&&e?.data?.first?.length&&e?.data?.last2?.length).map(e=>({draw_date:e.date,first_prize:e.data.first[0],last2:e.data.last2[0],last3_1:e.data.last3b?.[0]||null,last3_2:e.data.last3b?.[1]||null,lunar_side:approximateLunarSide(dateFields(e.date).draw_date),source:'GLO'}));}
+function gloItems(payload){
+ if(payload?.status===false)throw Error(payload.statusMessage||'GLO API ไม่สำเร็จ');
+ let entries=payload?.response??payload?.data??payload;
+ if(entries&&typeof entries==='object'&&!Array.isArray(entries)&&Array.isArray(entries.data))entries=entries.data;
+ if(!Array.isArray(entries))entries=[entries];
+ const values=(part)=>{const arr=Array.isArray(part)?part:Array.isArray(part?.number)?part.number:part?.number!=null?[part.number]:[];return arr.map(x=>typeof x==='object'?(x?.value??x?.number):x).filter(x=>x!==null&&x!==undefined&&String(x)!=='');};
+ const result=[];
+ for(const e of entries){if(!e?.date||!e?.data)continue;const d=e.data,first=values(d.first),last2=values(d.last2),last3b=values(d.last3b);if(!first.length||!last2.length)continue;
+ const draw_date=dateFields(e.date).draw_date;
+ result.push({draw_date,first_prize:first[0],last2:last2[0],last3_1:last3b[0]??null,last3_2:last3b[1]??null,lunar_side:approximateLunarSide(draw_date),source:'GLO'});
+ }
+ return result;
+}
 async function rows(db,where='',bind=[],limit=''){return (await db.prepare(`SELECT ${columns} FROM draws ${where} ORDER BY draw_date DESC ${limit}`).bind(...bind).all()).results;}
 function rank(map,key){return [...map].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).map(([v,count])=>({[key]:v,count}));}
 async function handler(req,env){const u=new URL(req.url),p=u.pathname,db=env.DB,method=req.method;if(!db)return fail('D1 binding DB is missing',503);
