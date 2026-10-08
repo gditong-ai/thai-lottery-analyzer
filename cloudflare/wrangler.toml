@@ -9,4 +9,4 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "thai-lottery-analyzer"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "be648e40-8a67-49ed-887c-f016575bfecc"
