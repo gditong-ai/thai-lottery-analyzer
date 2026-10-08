@@ -1,0 +1,12 @@
+name = "thai-lottery-analyzer"
+main = "src/index.js"
+compatibility_date = "2026-10-08"
+
+[assets]
+directory = "../dashboard"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "thai-lottery-analyzer"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
